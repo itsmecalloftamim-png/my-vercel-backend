@@ -7,18 +7,33 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Supabase
+// Initialize Supabase safely
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+let supabase;
+if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+}
 
 // Telegram Bot Details
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Health check to debug env variables
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: "ok",
+        supabaseConfigured: !!supabase,
+        telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID)
+    });
+});
+
 // 1. Auth: Login
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
+
     try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -31,6 +46,8 @@ app.post('/api/auth/login', async (req, res) => {
 // 2. Auth: Signup
 app.post('/api/auth/signup', async (req, res) => {
     const { email, password, fullName } = req.body;
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
+
     try {
         const { data, error } = await supabase.auth.signUp({
             email,
@@ -48,6 +65,10 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/telegram/send-transaction', async (req, res) => {
     const { amount, transactionId, category, userEmail } = req.body;
     
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        return res.status(500).json({ success: false, message: "Telegram bot not configured" });
+    }
+
     const message = `
 ðŸ”” *New Transaction Request*
 --------------------------
@@ -56,7 +77,6 @@ app.post('/api/telegram/send-transaction', async (req, res) => {
 ðŸ“‚ *Category:* ${category}
 ðŸ“§ *User:* ${userEmail}
 --------------------------
-Check dashboard for details.
     `;
 
     try {
@@ -67,14 +87,9 @@ Check dashboard for details.
         });
         res.json({ success: true, message: "Transaction sent to Telegram" });
     } catch (error) {
-        console.error("Telegram error:", error);
-        res.status(500).json({ success: false, message: "Failed to send to Telegram" });
+        console.error("Telegram error:", error.response?.data || error.message);
+        res.status(500).json({ success: false, message: "Telegram API Error", detail: error.response?.data?.description });
     }
-});
-
-// Default route for 404 prevention
-app.get('*', (req, res) => {
-    res.status(404).send('Halal Circle API - Endpoint not found');
 });
 
 module.exports = app;
