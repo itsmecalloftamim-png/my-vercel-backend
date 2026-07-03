@@ -1,3 +1,5 @@
+javascript
+// api/index.js
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -30,7 +32,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // 1. Auth: Login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
 
@@ -44,7 +46,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // 2. Auth: Signup
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/signup', async (req, res) => {
     const { email, password, fullName } = req.body;
     if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
 
@@ -62,7 +64,7 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // 3. Telegram: Send Transaction
-app.post('/api/telegram/send-transaction', async (req, res) => {
+app.post('/api/send-transaction', async (req, res) => {
     const { amount, transactionId, category, userEmail } = req.body;
     
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -70,14 +72,14 @@ app.post('/api/telegram/send-transaction', async (req, res) => {
     }
 
     const message = `
-ðŸ”” *New Transaction Request*
+ðŸ”” *à¦¨à¦¤à§à¦¨ à¦Ÿà§à¦°à¦¾à¦¨à¦œà§‡à¦•à¦¶à¦¨ à¦°à¦¿à¦•à§‹à¦¯à¦¼à§‡à¦¸à§à¦Ÿ*
 --------------------------
-ðŸ’° *Amount:* ${amount}
+ðŸ’° *à¦ªà¦°à¦¿à¦®à¦¾à¦£:* ${amount} BDT
 ðŸ“ *ID:* ${transactionId}
-ðŸ“‚ *Category:* ${category}
-ðŸ“§ *User:* ${userEmail}
+ðŸ“‚ *à¦•à§à¦¯à¦¾à¦Ÿà¦¾à¦—à¦°à¦¿:* ${category}
+ðŸ“§ *à¦‡à¦‰à¦œà¦¾à¦°:* ${userEmail}
 --------------------------
-    `;
+`;
 
     try {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -87,8 +89,7 @@ app.post('/api/telegram/send-transaction', async (req, res) => {
         });
         res.json({ success: true, message: "Transaction sent to Telegram" });
     } catch (error) {
-        console.error("Telegram error:", error.response?.data || error.message);
-        res.status(500).json({ success: false, message: "Telegram API Error", detail: error.response?.data?.description });
+        res.status(400).json({ success: false, message: "Telegram Error", detail: error.message });
     }
 });
 
