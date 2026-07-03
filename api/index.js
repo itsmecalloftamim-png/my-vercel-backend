@@ -1,5 +1,3 @@
-javascript
-// api/index.js
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -9,87 +7,84 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Supabase safely
+// ১. কনফিগারেশন চেক (Vercel Environment Variables থেকে আসবে)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const chatId = process.env.TELEGRAM_CHAT_ID;
 
 let supabase;
 if (supabaseUrl && supabaseKey) {
     supabase = createClient(supabaseUrl, supabaseKey);
 }
 
-// Telegram Bot Details
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-// Health check to debug env variables
+// ২. হেলথ চেক রুট (ব্রাউজারে গিয়ে https://আপনার-লিঙ্ক/api/health চেক করুন)
 app.get('/api/health', (req, res) => {
     res.json({
-        status: "ok",
+        status: "Running",
         supabaseConfigured: !!supabase,
-        telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID)
+        telegramConfigured: !!(botToken && chatId)
     });
 });
 
-// 1. Auth: Login
+// ৩. সাইনআপ (Signup)
+app.post('/api/signup', async (req, res) => {
+    const { email, password, fullName } = req.body;
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase Error: Config missing" });
+
+    try {
+        const { data, error } = await supabase.auth.signUp({
+            email, password, options: { data: { full_name: fullName } }
+        });
+        if (error) throw error;
+        res.json({ success: true, message: "Account created!", userId: data.user.id });
+    } catch (err) {
+        res.status(400).json({ success: false, message: err.message });
+    }
+});
+
+// ৪. লগইন (Login)
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
-    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase Error: Config missing" });
 
     try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        res.json({ success: true, message: "Logged in successfully", userId: data.user.id });
-    } catch (error) {
-        res.status(401).json({ success: false, message: error.message });
+        res.json({ success: true, message: "Logged in!", userId: data.user.id });
+    } catch (err) {
+        res.status(401).json({ success: false, message: err.message });
     }
 });
 
-// 2. Auth: Signup
-app.post('/api/signup', async (req, res) => {
-    const { email, password, fullName } = req.body;
-    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured" });
-
-    try {
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: { data: { full_name: fullName } }
-        });
-        if (error) throw error;
-        res.json({ success: true, message: "Account created successfully", userId: data.user.id });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
-});
-
-// 3. Telegram: Send Transaction
+// ৫. টেলিগ্রামে ট্রানজেকশন পাঠানো (Send Transaction)
 app.post('/api/send-transaction', async (req, res) => {
     const { amount, transactionId, category, userEmail } = req.body;
-    
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-        return res.status(500).json({ success: false, message: "Telegram bot not configured" });
+
+    if (!botToken || !chatId) {
+        return res.status(500).json({ success: false, message: "Backend Error: Telegram Token missing in Vercel settings" });
     }
 
-    const message = `
-ðŸ”” *à¦¨à¦¤à§à¦¨ à¦Ÿà§à¦°à¦¾à¦¨à¦œà§‡à¦•à¦¶à¦¨ à¦°à¦¿à¦•à§‹à¦¯à¦¼à§‡à¦¸à§à¦Ÿ*
+    const text = `
+🔔 *নতুন ট্রানজেকশন রিকোয়েস্ট*
 --------------------------
-ðŸ’° *à¦ªà¦°à¦¿à¦®à¦¾à¦£:* ${amount} BDT
-ðŸ“ *ID:* ${transactionId}
-ðŸ“‚ *à¦•à§à¦¯à¦¾à¦Ÿà¦¾à¦—à¦°à¦¿:* ${category}
-ðŸ“§ *à¦‡à¦‰à¦œà¦¾à¦°:* ${userEmail}
+💰 *পরিমাণ:* ${amount} BDT
+📝 *TrxID:* ${transactionId}
+📂 *ক্যাটাগরি:* ${category}
+📧 *ইউজার:* ${userEmail}
 --------------------------
 `;
 
     try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: message,
+        await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            chat_id: chatId,
+            text: text,
             parse_mode: 'Markdown'
         });
-        res.json({ success: true, message: "Transaction sent to Telegram" });
-    } catch (error) {
-        res.status(400).json({ success: false, message: "Telegram Error", detail: error.message });
+        res.json({ success: true, message: "Telegram-এ পাঠানো হয়েছে!" });
+    } catch (err) {
+        console.error(err);
+        res.status(400).json({ success: false, message: "Telegram Error", detail: err.message });
     }
 });
 
