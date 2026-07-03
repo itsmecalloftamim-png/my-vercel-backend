@@ -4,88 +4,114 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 
 const app = express();
+
+// Increase payload limit just in case
 app.use(cors());
 app.use(express.json());
 
-// ১. কনফিগারেশন চেক (Vercel Environment Variables থেকে আসবে)
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-const chatId = process.env.TELEGRAM_CHAT_ID;
+// Environment Variables
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Initialize Supabase
 let supabase;
-if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
+try {
+    if (SUPABASE_URL && SUPABASE_KEY) {
+        supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+} catch (e) {
+    console.error("Supabase Init Error:", e.message);
 }
 
-// ২. হেলথ চেক রুট (ব্রাউজারে গিয়ে https://আপনার-লিঙ্ক/api/health চেক করুন)
+// Health check to debug env variables
 app.get('/api/health', (req, res) => {
     res.json({
-        status: "Running",
+        status: "ok",
         supabaseConfigured: !!supabase,
-        telegramConfigured: !!(botToken && chatId)
+        telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
+        envCheck: {
+            hasUrl: !!SUPABASE_URL,
+            hasKey: !!SUPABASE_KEY,
+            hasBot: !!TELEGRAM_BOT_TOKEN,
+            hasChat: !!TELEGRAM_CHAT_ID
+        }
     });
 });
 
-// ৩. সাইনআপ (Signup)
-app.post('/api/signup', async (req, res) => {
-    const { email, password, fullName } = req.body;
-    if (!supabase) return res.status(500).json({ success: false, message: "Supabase Error: Config missing" });
-
-    try {
-        const { data, error } = await supabase.auth.signUp({
-            email, password, options: { data: { full_name: fullName } }
-        });
-        if (error) throw error;
-        res.json({ success: true, message: "Account created!", userId: data.user.id });
-    } catch (err) {
-        res.status(400).json({ success: false, message: err.message });
-    }
-});
-
-// ৪. লগইন (Login)
-app.post('/api/login', async (req, res) => {
+// Helper for Auth Routes
+const handleLogin = async (req, res) => {
     const { email, password } = req.body;
-    if (!supabase) return res.status(500).json({ success: false, message: "Supabase Error: Config missing" });
-
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured on server" });
     try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        res.json({ success: true, message: "Logged in!", userId: data.user.id });
-    } catch (err) {
-        res.status(401).json({ success: false, message: err.message });
+        res.json({ success: true, message: "Logged in successfully", userId: data.user.id });
+    } catch (error) {
+        res.status(401).json({ success: false, message: error.message });
     }
-});
+};
 
-// ৫. টেলিগ্রামে ট্রানজেকশন পাঠানো (Send Transaction)
-app.post('/api/send-transaction', async (req, res) => {
+const handleSignup = async (req, res) => {
+    const { email, password, fullName } = req.body;
+    if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured on server" });
+    try {
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: fullName || 'User' } }
+        });
+        if (error) throw error;
+        res.json({ success: true, message: "Account created successfully", userId: data?.user?.id });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+const handleTelegram = async (req, res) => {
     const { amount, transactionId, category, userEmail } = req.body;
-
-    if (!botToken || !chatId) {
-        return res.status(500).json({ success: false, message: "Backend Error: Telegram Token missing in Vercel settings" });
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        return res.status(500).json({ success: false, message: "Telegram not configured on server" });
     }
 
-    const text = `
-🔔 *নতুন ট্রানজেকশন রিকোয়েস্ট*
+    const message = `
+ðŸ”” *à¦¨à¦¤à§à¦¨ à¦Ÿà§à¦°à¦¾à¦¨à¦œà§‡à¦•à¦¶à¦¨ à¦°à¦¿à¦•à§‹à¦¯à¦¼à§‡à¦¸à§à¦Ÿ*
 --------------------------
-💰 *পরিমাণ:* ${amount} BDT
-📝 *TrxID:* ${transactionId}
-📂 *ক্যাটাগরি:* ${category}
-📧 *ইউজার:* ${userEmail}
+ðŸ’° *à¦ªà¦°à¦¿à¦®à¦¾à¦£:* ${amount} BDT
+ðŸ“ *ID:* ${transactionId}
+ðŸ“‚ *à¦•à§à¦¯à¦¾à¦Ÿà¦¾à¦—à¦°à¦¿:* ${category}
+ðŸ“§ *à¦‡à¦‰à¦œà¦¾à¦°:* ${userEmail}
 --------------------------
 `;
 
     try {
-        await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            chat_id: chatId,
-            text: text,
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: TELEGRAM_CHAT_ID,
+            text: message,
             parse_mode: 'Markdown'
         });
-        res.json({ success: true, message: "Telegram-এ পাঠানো হয়েছে!" });
-    } catch (err) {
-        console.error(err);
-        res.status(400).json({ success: false, message: "Telegram Error", detail: err.message });
+        res.json({ success: true, message: "Transaction sent to Telegram" });
+    } catch (error) {
+        console.error("Telegram error:", error.response?.data || error.message);
+        res.status(400).json({ success: false, message: "Telegram Error", detail: error.message });
     }
+};
+
+// Routes (supporting both with and without /auth prefix)
+app.post('/api/login', handleLogin);
+app.post('/api/auth/login', handleLogin);
+
+app.post('/api/signup', handleSignup);
+app.post('/api/auth/signup', handleSignup);
+
+app.post('/api/send-transaction', handleTelegram);
+app.post('/api/telegram/send-transaction', handleTelegram);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error("Server Error:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error", error: err.message });
 });
 
 module.exports = app;
