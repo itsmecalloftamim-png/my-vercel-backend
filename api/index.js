@@ -24,8 +24,8 @@ try {
     console.error("Supabase Init Error:", e.message);
 }
 
-// Health check to debug env variables
-app.get(['/health', '/api/health'], (req, res) => {
+// Health check
+app.get('/api/health', (req, res) => {
     res.json({
         status: "ok",
         supabaseConfigured: !!supabase,
@@ -33,7 +33,6 @@ app.get(['/health', '/api/health'], (req, res) => {
     });
 });
 
-// Helper for Auth Routes
 const handleLogin = async (req, res) => {
     const { email, password } = req.body;
     if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured on server" });
@@ -47,21 +46,13 @@ const handleLogin = async (req, res) => {
 };
 
 const handleSignup = async (req, res) => {
-    // Added 'username' to match Android App update
-    const { email, password, fullName, username } = req.body;
-    
+    const { email, password, fullName } = req.body;
     if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured on server" });
-    
     try {
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { 
-                data: { 
-                    full_name: fullName || 'User',
-                    username: username || email.split('@')[0]
-                } 
-            }
+            options: { data: { full_name: fullName || 'User' } }
         });
         if (error) throw error;
         res.json({ success: true, message: "Account created successfully", userId: data?.user?.id });
@@ -81,7 +72,7 @@ const handleTelegram = async (req, res) => {
 --------------------------
 💰 *পরিমাণ:* ${amount} BDT
 📝 *ID:* ${transactionId}
-📁 *ক্যাটাগরি:* ${category}
+📂 *ক্যাটাগরি:* ${category}
 📧 *ইউজার:* ${userEmail}
 --------------------------
 `;
@@ -99,18 +90,23 @@ const handleTelegram = async (req, res) => {
     }
 };
 
-// Routes (Supporting all Vercel rewrite patterns)
+// Vercel মাঝে মাঝে /api প্রিফিক্স রিমুভ করে দেয়, তাই সব রকম রাউট দেওয়া হলো
 app.post('/api/login', handleLogin);
 app.post('/login', handleLogin);
-app.post('/api/auth/login', handleLogin);
-app.post('/auth/login', handleLogin);
 
 app.post('/api/signup', handleSignup);
 app.post('/signup', handleSignup);
-app.post('/api/auth/signup', handleSignup);
-app.post('/auth/signup', handleSignup);
 
 app.post('/api/send-transaction', handleTelegram);
+app.post('/send-transaction', handleTelegram);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error("Server Error:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error", error: err.message });
+});
+
+module.exports = app;app.post('/api/send-transaction', handleTelegram);
 app.post('/send-transaction', handleTelegram);
 app.post('/api/telegram/send-transaction', handleTelegram);
 app.post('/telegram/send-transaction', handleTelegram);
