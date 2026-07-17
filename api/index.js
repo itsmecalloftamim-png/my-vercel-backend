@@ -5,7 +5,6 @@ const axios = require('axios');
 
 const app = express();
 
-// Increase payload limit just in case
 app.use(cors());
 app.use(express.json());
 
@@ -26,17 +25,11 @@ try {
 }
 
 // Health check to debug env variables
-app.get('/api/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
     res.json({
         status: "ok",
         supabaseConfigured: !!supabase,
-        telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
-        envCheck: {
-            hasUrl: !!SUPABASE_URL,
-            hasKey: !!SUPABASE_KEY,
-            hasBot: !!TELEGRAM_BOT_TOKEN,
-            hasChat: !!TELEGRAM_CHAT_ID
-        }
+        telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID)
     });
 });
 
@@ -54,13 +47,21 @@ const handleLogin = async (req, res) => {
 };
 
 const handleSignup = async (req, res) => {
-    const { email, password, fullName } = req.body;
+    // Added 'username' to match Android App update
+    const { email, password, fullName, username } = req.body;
+    
     if (!supabase) return res.status(500).json({ success: false, message: "Supabase not configured on server" });
+    
     try {
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { full_name: fullName || 'User' } }
+            options: { 
+                data: { 
+                    full_name: fullName || 'User',
+                    username: username || email.split('@')[0]
+                } 
+            }
         });
         if (error) throw error;
         res.json({ success: true, message: "Account created successfully", userId: data?.user?.id });
@@ -76,12 +77,12 @@ const handleTelegram = async (req, res) => {
     }
 
     const message = `
-ðŸ”” *à¦¨à¦¤à§à¦¨ à¦Ÿà§à¦°à¦¾à¦¨à¦œà§‡à¦•à¦¶à¦¨ à¦°à¦¿à¦•à§‹à¦¯à¦¼à§‡à¦¸à§à¦Ÿ*
+🔔 *নতুন ট্রানজেকশন রিকোয়েস্ট*
 --------------------------
-ðŸ’° *à¦ªà¦°à¦¿à¦®à¦¾à¦£:* ${amount} BDT
-ðŸ“ *ID:* ${transactionId}
-ðŸ“‚ *à¦•à§à¦¯à¦¾à¦Ÿà¦¾à¦—à¦°à¦¿:* ${category}
-ðŸ“§ *à¦‡à¦‰à¦œà¦¾à¦°:* ${userEmail}
+💰 *পরিমাণ:* ${amount} BDT
+📝 *ID:* ${transactionId}
+📁 *ক্যাটাগরি:* ${category}
+📧 *ইউজার:* ${userEmail}
 --------------------------
 `;
 
@@ -98,15 +99,21 @@ const handleTelegram = async (req, res) => {
     }
 };
 
-// Routes (supporting both with and without /auth prefix)
+// Routes (Supporting all Vercel rewrite patterns)
 app.post('/api/login', handleLogin);
+app.post('/login', handleLogin);
 app.post('/api/auth/login', handleLogin);
+app.post('/auth/login', handleLogin);
 
 app.post('/api/signup', handleSignup);
+app.post('/signup', handleSignup);
 app.post('/api/auth/signup', handleSignup);
+app.post('/auth/signup', handleSignup);
 
 app.post('/api/send-transaction', handleTelegram);
+app.post('/send-transaction', handleTelegram);
 app.post('/api/telegram/send-transaction', handleTelegram);
+app.post('/telegram/send-transaction', handleTelegram);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
